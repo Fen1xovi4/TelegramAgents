@@ -18,6 +18,7 @@ class AgentResponse:
     text: str
     intent: str | None = None
     intent_data: dict | None = None
+    buttons: list[str] | None = None
 
 
 class BaseAgent(ABC):

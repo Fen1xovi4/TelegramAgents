@@ -4,6 +4,7 @@ import time
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -128,7 +129,13 @@ class TelegramBotManager:
             db.add(log)
             await db.commit()
 
-            await message.answer(response.text)
+            reply_markup = None
+            if response.buttons:
+                reply_markup = ReplyKeyboardMarkup(
+                    keyboard=[[KeyboardButton(text=btn)] for btn in response.buttons],
+                    resize_keyboard=True,
+                )
+            await message.answer(response.text, reply_markup=reply_markup)
 
     async def _get_or_create_user(
         self, db: AsyncSession, agent_id: int, tg_user: types.User

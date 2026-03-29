@@ -76,8 +76,13 @@ async def parse_intent(prompt: str) -> dict:
         if text.startswith("json"):
             text = text[4:]
     try:
-        return json.loads(text)
-    except json.JSONDecodeError:
+        data = json.loads(text)
+        if isinstance(data, list):
+            data = data[0] if data else {}
+        if not isinstance(data, dict):
+            return {"intent": "unknown", "params": {}}
+        return data
+    except (json.JSONDecodeError, IndexError):
         return {"intent": "unknown", "params": {}}
 
 

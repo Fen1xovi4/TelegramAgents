@@ -1,11 +1,9 @@
 import React, { useState } from 'react'
-import { Button, Table, Tag, Space, Modal, Form, Input, Select, Typography, message, Popconfirm } from 'antd'
+import { Button, Table, Tag, Space, Modal, Form, Input, Select, message, Popconfirm } from 'antd'
 import { PlusOutlined, PlayCircleOutlined, PauseCircleOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { getAgents, createAgent, deleteAgent, activateAgent, deactivateAgent, Agent } from '../api/agents'
-
-const { Title } = Typography
 
 export default function AgentsListPage() {
   const [open, setOpen] = useState(false)
@@ -45,14 +43,24 @@ export default function AgentsListPage() {
       title: 'Название',
       dataIndex: 'name',
       render: (name: string, record: Agent) => (
-        <a onClick={() => navigate(`/agents/${record.id}`)}>{name}</a>
+        <a onClick={() => navigate(`/agents/${record.id}`)} style={{ fontWeight: 500, color: '#6366f1' }}>
+          {name}
+        </a>
       ),
     },
-    { title: 'Тип', dataIndex: 'agent_type', render: (t: string) => <Tag color="blue">{t}</Tag> },
+    {
+      title: 'Тип',
+      dataIndex: 'agent_type',
+      render: (t: string) => <Tag className="tag-type">{t}</Tag>,
+    },
     {
       title: 'Статус',
       dataIndex: 'is_active',
-      render: (active: boolean) => <Tag color={active ? 'green' : 'default'}>{active ? 'Активен' : 'Неактивен'}</Tag>,
+      render: (active: boolean) => (
+        <Tag className={active ? 'tag-active' : 'tag-inactive'}>
+          {active ? 'Активен' : 'Неактивен'}
+        </Tag>
+      ),
     },
     {
       title: 'Действия',
@@ -62,11 +70,12 @@ export default function AgentsListPage() {
             size="small"
             icon={record.is_active ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
             onClick={() => toggleMutation.mutate({ id: record.id, active: record.is_active })}
+            style={{ borderRadius: 8 }}
           >
             {record.is_active ? 'Стоп' : 'Старт'}
           </Button>
           <Popconfirm title="Удалить агента?" onConfirm={() => deleteMutation.mutate(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
+            <Button size="small" danger icon={<DeleteOutlined />} style={{ borderRadius: 8 }} />
           </Popconfirm>
         </Space>
       ),
@@ -75,14 +84,24 @@ export default function AgentsListPage() {
 
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Title level={4} style={{ margin: 0 }}>Агенты</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Агенты</h1>
+          <div className="page-subtitle">Управление вашими Telegram-ботами</div>
+        </div>
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          onClick={() => setOpen(true)}
+          className="btn-primary"
+        >
           Создать агента
         </Button>
       </div>
 
-      <Table dataSource={agents} columns={columns} rowKey="id" loading={isLoading} />
+      <div className="modern-table">
+        <Table dataSource={agents} columns={columns} rowKey="id" loading={isLoading} />
+      </div>
 
       <Modal
         title="Новый агент"
@@ -90,6 +109,9 @@ export default function AgentsListPage() {
         onCancel={() => setOpen(false)}
         onOk={() => form.submit()}
         confirmLoading={createMutation.isPending}
+        className="modern-modal"
+        okText="Создать"
+        cancelText="Отмена"
       >
         <Form form={form} layout="vertical" onFinish={(values) => createMutation.mutate(values)}>
           <Form.Item name="name" label="Название" rules={[{ required: true }]}>

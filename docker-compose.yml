@@ -58,6 +58,24 @@ services:
       - ./backend:/app
     command: arq app.worker.main.WorkerSettings
 
+  db-backup:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: ${DB_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backups:/backups
+      - ./scripts/backup.sh:/scripts/backup.sh:ro
+    entrypoint: /bin/sh
+    command: >
+      -c "cp /scripts/backup.sh /backup.sh && chmod +x /backup.sh &&
+          echo '0 3 * * * /backup.sh >> /var/log/backup.log 2>&1' > /etc/crontabs/root &&
+          /backup.sh >> /var/log/backup.log 2>&1 &&
+          crond -f -l 2"
+    restart: unless-stopped
+
   frontend:
     build: ./frontend
     ports:

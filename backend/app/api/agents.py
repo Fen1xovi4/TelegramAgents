@@ -8,6 +8,7 @@ from app.models.agent_user import AgentUser
 from app.models.user import User
 from app.schemas.agent import AgentCreate, AgentUpdate, AgentResponse, AgentUserResponse, AgentUserUpdate
 from app.api.deps import get_current_user
+from app.services.telegram_bot_manager import bot_manager
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 
@@ -76,6 +77,7 @@ async def activate_agent(agent_id: int, db: AsyncSession = Depends(get_db), user
     agent.is_active = True
     await db.commit()
     await db.refresh(agent)
+    await bot_manager.start_bot(agent.id, agent.bot_token, agent.agent_type)
     return agent
 
 
@@ -88,6 +90,7 @@ async def deactivate_agent(agent_id: int, db: AsyncSession = Depends(get_db), us
     agent.is_active = False
     await db.commit()
     await db.refresh(agent)
+    await bot_manager.stop_bot(agent.id)
     return agent
 
 

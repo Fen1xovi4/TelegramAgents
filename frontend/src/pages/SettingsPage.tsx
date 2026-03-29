@@ -14,23 +14,23 @@ import {
   testConnection, testAllConnections, LLMConnection, CreateConnectionBody, SettingsOverview,
 } from '../api/settings'
 
-const { Title, Text, Paragraph } = Typography
+const { Text, Paragraph } = Typography
 
 function ProviderTag({ provider }: { provider: string }) {
   const colors: Record<string, string> = { openai: 'green', anthropic: 'purple' }
-  return <Tag color={colors[provider] || 'default'}>{provider}</Tag>
+  return <Tag color={colors[provider] || 'default'} style={{ borderRadius: 6 }}>{provider}</Tag>
 }
 
 function PurposeTag({ purpose, label }: { purpose: string; label: string }) {
   const colors: Record<string, string> = { chat: 'blue', stt: 'orange' }
-  return <Tag color={colors[purpose] || 'default'}>{label}</Tag>
+  return <Tag color={colors[purpose] || 'default'} style={{ borderRadius: 6 }}>{label}</Tag>
 }
 
 function StatusIcon({ conn }: { conn: LLMConnection }) {
-  if (conn.connected === null) return <Tag>Не проверен</Tag>
-  if (conn.connected) return <Tag icon={<CheckCircleOutlined />} color="success">OK</Tag>
+  if (conn.connected === null) return <Tag style={{ borderRadius: 6 }}>Не проверен</Tag>
+  if (conn.connected) return <Tag icon={<CheckCircleOutlined />} color="success" style={{ borderRadius: 6 }}>OK</Tag>
   return (
-    <Tag icon={<CloseCircleOutlined />} color="error">
+    <Tag icon={<CloseCircleOutlined />} color="error" style={{ borderRadius: 6 }}>
       {conn.error || 'Ошибка'}
     </Tag>
   )
@@ -78,7 +78,6 @@ export default function SettingsPage() {
   const testOneMut = useMutation({
     mutationFn: testConnection,
     onSuccess: (result) => {
-      // Update just this connection in cache, preserving test results
       queryClient.setQueryData<SettingsOverview>(['settings'], (old) => {
         if (!old) return old
         return {
@@ -94,7 +93,6 @@ export default function SettingsPage() {
   const testAllMut = useMutation({
     mutationFn: testAllConnections,
     onSuccess: (results) => {
-      // Replace connections in cache with test results
       queryClient.setQueryData<SettingsOverview>(['settings'], (old) => {
         if (!old) return old
         return { ...old, connections: results }
@@ -134,7 +132,7 @@ export default function SettingsPage() {
   const handleSubmit = (values: any) => {
     if (editingId) {
       const body: any = { ...values }
-      if (!body.api_key) delete body.api_key // don't overwrite if empty
+      if (!body.api_key) delete body.api_key
       updateMut.mutate({ id: editingId, body })
     } else {
       createMut.mutate(values as CreateConnectionBody)
@@ -150,7 +148,7 @@ export default function SettingsPage() {
         <Button
           type="text"
           size="small"
-          icon={def ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
+          icon={def ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined style={{ color: '#d1d5db' }} />}
           onClick={() => updateMut.mutate({ id: record.id, body: { is_default: true } })}
           title={def ? 'По умолчанию' : 'Сделать по умолчанию'}
         />
@@ -187,10 +185,11 @@ export default function SettingsPage() {
             onClick={() => testOneMut.mutate(record.id)}
             loading={testOneMut.isPending}
             title="Проверить"
+            style={{ borderRadius: 8 }}
           />
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} title="Редактировать" />
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} title="Редактировать" style={{ borderRadius: 8 }} />
           <Popconfirm title="Удалить подключение?" onConfirm={() => deleteMut.mutate(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} title="Удалить" />
+            <Button size="small" danger icon={<DeleteOutlined />} title="Удалить" style={{ borderRadius: 8 }} />
           </Popconfirm>
         </Space>
       ),
@@ -200,67 +199,70 @@ export default function SettingsPage() {
   if (isLoading) return <Spin size="large" style={{ display: 'block', margin: '100px auto' }} />
 
   const chatConns = data?.connections.filter((c) => c.purpose === 'chat') || []
-  const sttConns = data?.connections.filter((c) => c.purpose === 'stt') || []
   const hasDefaultChat = chatConns.some((c) => c.is_default)
-  const hasDefaultStt = sttConns.some((c) => c.is_default)
 
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <Title level={4} style={{ margin: 0 }}>Настройки LLM</Title>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Настройки LLM</h1>
+          <div className="page-subtitle">Управление подключениями к языковым моделям</div>
+        </div>
         <Space>
           <Button
             icon={<SyncOutlined spin={testAllMut.isPending} />}
             onClick={() => testAllMut.mutate()}
             loading={testAllMut.isPending}
+            style={{ borderRadius: 10 }}
           >
             Проверить все
           </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} className="btn-primary">
             Добавить LLM
           </Button>
         </Space>
       </div>
 
       {!hasDefaultChat && data && data.connections.length > 0 && (
-        <Card style={{ marginBottom: 16, borderColor: '#faad14' }} styles={{ body: { padding: '12px 16px' } }}>
+        <Card className="warning-banner" styles={{ body: { padding: '12px 16px' } }} style={{ marginBottom: 20 }}>
           <Space>
-            <ExclamationCircleOutlined style={{ color: '#faad14' }} />
-            <Text type="warning">Нет подключения по умолчанию для чата. Нажмите звёздочку, чтобы назначить.</Text>
+            <ExclamationCircleOutlined style={{ color: '#f59e0b' }} />
+            <Text style={{ color: '#92400e' }}>Нет подключения по умолчанию для чата. Нажмите звёздочку, чтобы назначить.</Text>
           </Space>
         </Card>
       )}
 
       {data?.connections.length === 0 ? (
-        <Empty
-          description="Нет подключений к LLM"
-          style={{ marginTop: 80 }}
-        >
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            Добавить первое подключение
-          </Button>
-        </Empty>
+        <div className="empty-state">
+          <Empty description="Нет подключений к LLM">
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} className="btn-primary">
+              Добавить первое подключение
+            </Button>
+          </Empty>
+        </div>
       ) : (
-        <Table
-          dataSource={data?.connections}
-          columns={columns}
-          rowKey="id"
-          size="middle"
-          pagination={false}
-        />
+        <div className="modern-table">
+          <Table
+            dataSource={data?.connections}
+            columns={columns}
+            rowKey="id"
+            size="middle"
+            pagination={false}
+          />
+        </div>
       )}
 
-      <Card style={{ marginTop: 24 }}>
-        <Title level={5} style={{ marginTop: 0 }}>Как это работает</Title>
-        <Paragraph>
+      <Card className="info-card">
+        <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, color: '#1a1d2e' }}>Как это работает</h3>
+        <Paragraph style={{ color: '#64748b', marginBottom: 8 }}>
           Каждое подключение — это комбинация провайдера, API-ключа, модели и назначения.
         </Paragraph>
-        <Paragraph>
-          <Text strong>Чат / ответы</Text> — модель для обработки сообщений пользователей (парсинг интентов, рекомендации).
+        <Paragraph style={{ color: '#64748b', marginBottom: 8 }}>
+          <Text strong style={{ color: '#475569' }}>Чат / ответы</Text> — модель для обработки сообщений пользователей (парсинг интентов, рекомендации).
           <br />
-          <Text strong>STT (речь → текст)</Text> — модель для распознавания голосовых сообщений (Whisper).
+          <Text strong style={{ color: '#475569' }}>STT (речь → текст)</Text> — модель для распознавания голосовых сообщений (Whisper).
         </Paragraph>
-        <Paragraph>
+        <Paragraph style={{ color: '#64748b', marginBottom: 0 }}>
           Подключение со звёздочкой — используется по умолчанию. Можно добавить несколько подключений
           с разными ключами и моделями для разных целей.
         </Paragraph>
@@ -275,6 +277,7 @@ export default function SettingsPage() {
         cancelText="Отмена"
         confirmLoading={createMut.isPending || updateMut.isPending}
         width={520}
+        className="modern-modal"
       >
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
           <Form.Item name="name" label="Название" rules={[{ required: !editingId }]}>
@@ -287,9 +290,7 @@ export default function SettingsPage() {
               onChange={() => form.setFieldValue('model', undefined)}
             >
               {data?.providers.map((p) => (
-                <Select.Option key={p.id} value={p.id}>
-                  {p.id === 'openai' ? '🧠' : '🤖'} {p.label}
-                </Select.Option>
+                <Select.Option key={p.id} value={p.id}>{p.label}</Select.Option>
               ))}
             </Select>
           </Form.Item>

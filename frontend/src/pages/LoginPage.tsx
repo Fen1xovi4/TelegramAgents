@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Card, Form, Input, Button, Typography, message } from 'antd'
-import { UserOutlined, LockOutlined } from '@ant-design/icons'
+import { UserOutlined, LockOutlined, RobotOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { login } from '../api/auth'
 
@@ -23,19 +23,26 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#f0f2f5' }}>
-      <Card style={{ width: 400 }}>
-        <Title level={3} style={{ textAlign: 'center', marginBottom: 32 }}>
-          Telegram Agents
-        </Title>
-        <Form onFinish={onFinish} size="large">
+    <div className="login-page">
+      <Card className="login-card" bordered={false}>
+        <div className="login-header">
+          <div className="login-logo-icon">
+            <RobotOutlined />
+          </div>
+          <Title level={3} className="login-title">
+            TG Agents
+          </Title>
+          <div className="login-subtitle">Войдите в панель управления</div>
+        </div>
+
+        <Form onFinish={onFinish} size="large" layout="vertical">
           <Form.Item name="email" rules={[{ required: true, message: 'Введите email' }]}>
-            <Input prefix={<UserOutlined />} placeholder="Email" />
+            <Input prefix={<UserOutlined />} placeholder="Email" autoComplete="email" />
           </Form.Item>
           <Form.Item name="password" rules={[{ required: true, message: 'Введите пароль' }]}>
             <Input.Password prefix={<LockOutlined />} placeholder="Пароль" />
           </Form.Item>
-          <Form.Item>
+          <Form.Item style={{ marginBottom: 0 }}>
             <Button type="primary" htmlType="submit" loading={loading} block>
               Войти
             </Button>

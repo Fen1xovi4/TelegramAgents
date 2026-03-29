@@ -14,13 +14,34 @@ from app.models.bookstore import Book, InventoryLog
 class BookstoreAgent(BaseAgent):
     agent_type = "bookstore"
 
+    # user state: telegram_id -> awaiting action
+    _user_state: dict[int, str] = {}
+
     def get_default_config(self) -> dict:
         return {"welcome_message": "Добро пожаловать в книжный магазин! Спросите о наличии книг или попросите рекомендацию."}
 
     def get_roles(self) -> list[str]:
         return ["admin", "manager", "user"]
 
+    QUICK_BUTTONS = ["📚 Список книг", "🔍 Поиск книги"]
+
     async def handle_message(self, message: AgentMessage, db: AsyncSession) -> AgentResponse:
+        # Quick button shortcuts — bypass LLM
+        if message.text == "📚 Список книг":
+            return await self._handle_search({}, message, db)
+
+        if message.text == "🔍 Поиск книги":
+            self._user_state[message.telegram_id] = "search"
+            return AgentResponse(
+                text="Введите название книги или имя автора:",
+                intent="search_prompt",
+            )
+
+        # Handle pending state
+        state = self._user_state.pop(message.telegram_id, None)
+        if state == "search":
+            return await self._handle_search({"query": message.text}, message, db)
+
         intent_data = await parse_intent(
             INTENT_PARSE_SYSTEM.format(role=message.role, text=message.text)
         )
@@ -36,6 +57,7 @@ class BookstoreAgent(BaseAgent):
                         "Привет! Я бот книжного магазина. Спросите о книгах или попросите рекомендацию.",
                     ),
                     intent=intent,
+                    buttons=self.QUICK_BUTTONS,
                 )
             case "help":
                 return AgentResponse(text=self._help_text(message.role), intent=intent)
@@ -49,6 +71,14 @@ class BookstoreAgent(BaseAgent):
                 if message.role not in ("admin", "manager"):
                     return AgentResponse(text="У вас нет прав для продажи книг.", intent=intent)
                 return await self._handle_sell(params, message, db)
+            case "remove_book":
+                if message.role not in ("admin", "manager"):
+                    return AgentResponse(text="У вас нет прав для удаления книг.", intent=intent)
+                return await self._handle_remove(params, message, db)
+            case "edit_book":
+                if message.role not in ("admin", "manager"):
+                    return AgentResponse(text="У вас нет прав для редактирования книг.", intent=intent)
+                return await self._handle_edit(params, message, db)
             case "recommend":
                 return await self._handle_recommend(params, message, db)
             case "list_genres":
@@ -60,10 +90,12 @@ class BookstoreAgent(BaseAgent):
                 )
 
     async def _handle_search(self, params: dict, message: AgentMessage, db: AsyncSession) -> AgentResponse:
+        from sqlalchemy import or_
+
         query = select(Book).where(Book.agent_id == message.agent_id, Book.quantity > 0)
 
-        if title := params.get("query") or params.get("title"):
-            query = query.where(Book.title.ilike(f"%{title}%"))
+        if q := params.get("query") or params.get("title"):
+            query = query.where(or_(Book.title.ilike(f"%{q}%"), Book.author.ilike(f"%{q}%")))
         if author := params.get("author"):
             query = query.where(Book.author.ilike(f"%{author}%"))
         if genre := params.get("genre"):
@@ -75,12 +107,25 @@ class BookstoreAgent(BaseAgent):
         if not books:
             return AgentResponse(text="К сожалению, ничего не найдено.", intent="search_books", intent_data=params)
 
-        lines = ["Найденные книги:\n"]
+        # Group by genre
+        from collections import defaultdict
+        by_genre: dict[str, list] = defaultdict(list)
         for b in books:
-            price_str = f", {b.price} руб." if b.price else ""
-            lines.append(f"📚 {b.title} — {b.author or 'Автор неизвестен'} (кол-во: {b.quantity}{price_str})")
+            by_genre[b.genre or ""].append(b)
 
-        return AgentResponse(text="\n".join(lines), intent="search_books", intent_data=params)
+        lines = ["📖 Найденные книги:\n"]
+        # Categories with genre first, then uncategorized
+        for genre in sorted(by_genre.keys(), key=lambda g: (g == "", g)):
+            if genre:
+                lines.append(f"\n📂 {genre}:")
+            elif by_genre.keys() - {""}:
+                lines.append("\n📂 Без категории:")
+            for b in by_genre[genre]:
+                author_str = b.author or "Автор неизвестен"
+                price_str = f", {b.price} руб." if b.price else ""
+                lines.append(f"  📚 {b.title} — {author_str} (кол-во: {b.quantity}{price_str})")
+
+        return AgentResponse(text="\n".join(lines), intent="search_books", intent_data=params, buttons=self.QUICK_BUTTONS)
 
     async def _handle_add(self, params: dict, message: AgentMessage, db: AsyncSession) -> AgentResponse:
         title = params.get("title", "").strip()
@@ -89,6 +134,7 @@ class BookstoreAgent(BaseAgent):
 
         quantity = int(params.get("quantity", 1))
         author = params.get("author")
+        genre = params.get("genre")
         price = params.get("price")
 
         result = await db.execute(
@@ -98,11 +144,16 @@ class BookstoreAgent(BaseAgent):
 
         if book:
             book.quantity += quantity
+            if author and not book.author:
+                book.author = author
+            if genre and not book.genre:
+                book.genre = genre
         else:
             book = Book(
                 agent_id=message.agent_id,
                 title=title,
                 author=author,
+                genre=genre,
                 quantity=quantity,
                 price=price,
             )
@@ -165,6 +216,106 @@ class BookstoreAgent(BaseAgent):
             intent_data=params,
         )
 
+    async def _handle_remove(self, params: dict, message: AgentMessage, db: AsyncSession) -> AgentResponse:
+        # Support both titles (array) and title (single string) for backwards compat
+        titles = params.get("titles") or []
+        if not titles:
+            title = params.get("title", "").strip()
+            if title:
+                titles = [title]
+        if not titles:
+            return AgentResponse(text="Укажите название книги.", intent="remove_book")
+
+        reason = params.get("reason", "удалено")
+        removed = []
+        not_found = []
+
+        for t in titles:
+            result = await db.execute(
+                select(Book).where(Book.agent_id == message.agent_id, Book.title.ilike(f"%{t}%"))
+            )
+            book = result.scalar_one_or_none()
+            if not book:
+                not_found.append(t)
+                continue
+
+            log = InventoryLog(
+                book_id=book.id,
+                agent_id=message.agent_id,
+                change_type="adjustment",
+                quantity_change=-book.quantity,
+                note=f"Списание: {reason}",
+                performed_by=message.telegram_id,
+            )
+            db.add(log)
+            removed.append(book.title)
+            await db.delete(book)
+
+        await db.commit()
+
+        lines = []
+        if removed:
+            lines.append("Удалено: " + ", ".join(f"«{t}»" for t in removed))
+        if not_found:
+            lines.append("Не найдено: " + ", ".join(f"«{t}»" for t in not_found))
+
+        return AgentResponse(
+            text="\n".join(lines),
+            intent="remove_book",
+            intent_data=params,
+        )
+
+    async def _handle_edit(self, params: dict, message: AgentMessage, db: AsyncSession) -> AgentResponse:
+        title = params.get("title", "").strip()
+        if not title:
+            return AgentResponse(text="Укажите название книги для редактирования.", intent="edit_book")
+
+        result = await db.execute(
+            select(Book).where(Book.agent_id == message.agent_id, Book.title.ilike(f"%{title}%"))
+        )
+        book = result.scalar_one_or_none()
+
+        if not book:
+            return AgentResponse(text=f"Книга «{title}» не найдена.", intent="edit_book")
+
+        changes = []
+        if new_title := params.get("new_title"):
+            book.title = new_title
+            changes.append(f"название → {new_title}")
+        if new_author := params.get("new_author"):
+            book.author = new_author
+            changes.append(f"автор → {new_author}")
+        if new_genre := params.get("new_genre"):
+            book.genre = new_genre
+            changes.append(f"жанр → {new_genre}")
+        if (new_qty := params.get("new_quantity")) is not None:
+            old_qty = book.quantity
+            book.quantity = int(new_qty)
+            changes.append(f"кол-во → {book.quantity} (было {old_qty})")
+            log = InventoryLog(
+                book_id=book.id,
+                agent_id=message.agent_id,
+                change_type="adjustment",
+                quantity_change=book.quantity - old_qty,
+                note="Корректировка через Telegram",
+                performed_by=message.telegram_id,
+            )
+            db.add(log)
+        if (new_price := params.get("new_price")) is not None:
+            book.price = float(new_price)
+            changes.append(f"цена → {book.price} руб.")
+
+        if not changes:
+            return AgentResponse(text="Не указаны поля для изменения.", intent="edit_book")
+
+        await db.commit()
+
+        return AgentResponse(
+            text=f"Книга «{book.title}» обновлена:\n" + "\n".join(f"• {c}" for c in changes),
+            intent="edit_book",
+            intent_data=params,
+        )
+
     async def _handle_recommend(self, params: dict, message: AgentMessage, db: AsyncSession) -> AgentResponse:
         query = select(Book).where(Book.agent_id == message.agent_id, Book.quantity > 0)
         if genre := params.get("genre"):
@@ -216,5 +367,7 @@ class BookstoreAgent(BaseAgent):
                 "\n🔧 Управление (для администраторов):\n"
                 "➕ Добавить — «приехало 5 книг Война и Мир»\n"
                 "➖ Продажа — «продана книга Мастер и Маргарита»\n"
+                "✏️ Изменить — «измени количество книги Война и мир на 5» или «измени автора книги Слон на Филипенк��»\n"
+                "🗑 Удалить — «удали книгу М��угли» или «списать к��игу, потеряли»\n"
             )
         return base

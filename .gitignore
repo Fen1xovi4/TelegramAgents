@@ -7,3 +7,4 @@ dist/
 *.egg-info/
 .pytest_cache/
 postgres_data/
+backups/

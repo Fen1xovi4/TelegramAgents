@@ -1,12 +1,10 @@
 import React from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Card, Descriptions, Tag, Button, Tabs, Space, Typography, Spin, Table, Select, message, Popconfirm } from 'antd'
+import { Card, Descriptions, Tag, Button, Tabs, Space, Spin, Table, Select, message, Popconfirm } from 'antd'
 import { ArrowLeftOutlined, PlayCircleOutlined, PauseCircleOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getAgent, getAgentUsers, getAgentLogs, activateAgent, deactivateAgent, updateAgentUser, AgentUser, MessageLog } from '../api/agents'
 import { getBooks, Book } from '../api/bookstore'
-
-const { Title } = Typography
 
 export default function AgentDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -37,7 +35,7 @@ export default function AgentDetailPage() {
     },
   })
 
-  if (isLoading) return <Spin size="large" />
+  if (isLoading) return <Spin size="large" style={{ display: 'block', margin: '100px auto' }} />
   if (!agent) return <div>Агент не найден</div>
 
   const userColumns = [
@@ -68,7 +66,7 @@ export default function AgentDetailPage() {
           title={blocked ? 'Разблокировать?' : 'Заблокировать?'}
           onConfirm={() => updateUserMutation.mutate({ userId: record.id, body: { is_blocked: !blocked } })}
         >
-          <Tag color={blocked ? 'red' : 'green'} style={{ cursor: 'pointer' }}>
+          <Tag className={blocked ? 'tag-inactive' : 'tag-active'} style={{ cursor: 'pointer' }}>
             {blocked ? 'Да' : 'Нет'}
           </Tag>
         </Popconfirm>
@@ -99,26 +97,38 @@ export default function AgentDetailPage() {
       key: 'info',
       label: 'Информация',
       children: (
-        <Descriptions bordered column={1}>
-          <Descriptions.Item label="Название">{agent.name}</Descriptions.Item>
-          <Descriptions.Item label="Тип">{agent.agent_type}</Descriptions.Item>
-          <Descriptions.Item label="Bot Token">{agent.bot_token}</Descriptions.Item>
-          <Descriptions.Item label="Статус">
-            <Tag color={agent.is_active ? 'green' : 'default'}>{agent.is_active ? 'Активен' : 'Неактивен'}</Tag>
-          </Descriptions.Item>
-          <Descriptions.Item label="Создан">{new Date(agent.created_at).toLocaleString('ru-RU')}</Descriptions.Item>
-        </Descriptions>
+        <div className="modern-descriptions">
+          <Descriptions bordered column={1}>
+            <Descriptions.Item label="Название">{agent.name}</Descriptions.Item>
+            <Descriptions.Item label="Тип"><Tag className="tag-type">{agent.agent_type}</Tag></Descriptions.Item>
+            <Descriptions.Item label="Bot Token">{agent.bot_token}</Descriptions.Item>
+            <Descriptions.Item label="Статус">
+              <Tag className={agent.is_active ? 'tag-active' : 'tag-inactive'}>
+                {agent.is_active ? 'Активен' : 'Неактивен'}
+              </Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="Создан">{new Date(agent.created_at).toLocaleString('ru-RU')}</Descriptions.Item>
+          </Descriptions>
+        </div>
       ),
     },
     {
       key: 'users',
       label: `Пользователи (${users.length})`,
-      children: <Table dataSource={users} columns={userColumns} rowKey="id" size="small" />,
+      children: (
+        <div className="modern-table">
+          <Table dataSource={users} columns={userColumns} rowKey="id" size="small" />
+        </div>
+      ),
     },
     {
       key: 'logs',
       label: 'Логи',
-      children: <Table dataSource={logsData?.items || []} columns={logColumns} rowKey="id" size="small" />,
+      children: (
+        <div className="modern-table">
+          <Table dataSource={logsData?.items || []} columns={logColumns} rowKey="id" size="small" />
+        </div>
+      ),
     },
   ]
 
@@ -126,26 +136,40 @@ export default function AgentDetailPage() {
     tabs.push({
       key: 'books',
       label: `Книги (${books.length})`,
-      children: <Table dataSource={books} columns={bookColumns} rowKey="id" size="small" />,
+      children: (
+        <div className="modern-table">
+          <Table dataSource={books} columns={bookColumns} rowKey="id" size="small" />
+        </div>
+      ),
     })
   }
 
   return (
     <>
-      <Space style={{ marginBottom: 16 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/agents')}>Назад</Button>
-        <Title level={4} style={{ margin: 0 }}>{agent.name}</Title>
+      <div className="agent-detail-header">
+        <Button
+          icon={<ArrowLeftOutlined />}
+          onClick={() => navigate('/agents')}
+          style={{ borderRadius: 10 }}
+        >
+          Назад
+        </Button>
+        <h1 className="page-title">{agent.name}</h1>
         <Button
           type={agent.is_active ? 'default' : 'primary'}
           icon={agent.is_active ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
           onClick={() => toggleMutation.mutate()}
+          className={agent.is_active ? undefined : 'btn-primary'}
+          style={{ borderRadius: 10 }}
         >
           {agent.is_active ? 'Остановить' : 'Запустить'}
         </Button>
-      </Space>
+      </div>
 
-      <Card>
-        <Tabs items={tabs} />
+      <Card className="modern-card">
+        <div className="modern-tabs">
+          <Tabs items={tabs} />
+        </div>
       </Card>
     </>
   )
