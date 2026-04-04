@@ -47,6 +47,21 @@ async def update_book(
     return book
 
 
+@router.delete("/books/{book_id}", status_code=204)
+async def delete_book(
+    agent_id: int,
+    book_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(select(Book).where(Book.id == book_id, Book.agent_id == agent_id))
+    book = result.scalar_one_or_none()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    await db.delete(book)
+    await db.commit()
+
+
 @router.get("/inventory-log", response_model=list[InventoryLogResponse])
 async def get_inventory_log(
     agent_id: int,

@@ -120,6 +120,7 @@ export default function AgentsListPage() {
           <Form.Item name="agent_type" label="Тип агента" rules={[{ required: true }]}>
             <Select placeholder="Выберите тип">
               <Select.Option value="bookstore">Книжный магазин</Select.Option>
+              <Select.Option value="video_shorts">Нарезка видео на шортсы</Select.Option>
             </Select>
           </Form.Item>
           <Form.Item name="bot_token" label="Bot Token (Telegram)" rules={[{ required: true }]}>

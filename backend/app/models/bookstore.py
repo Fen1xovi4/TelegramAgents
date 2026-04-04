@@ -12,6 +12,7 @@ class Book(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"))
+    category: Mapped[str] = mapped_column(String(20), default="sale")  # sale / rental
     title: Mapped[str] = mapped_column(String(500))
     author: Mapped[str | None] = mapped_column(String(500))
     genre: Mapped[str | None] = mapped_column(String(100))

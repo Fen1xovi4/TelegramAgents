@@ -6,5 +6,6 @@ from app.models.message_log import MessageLog
 from app.models.bookstore import Book, InventoryLog
 from app.models.platform_settings import PlatformSetting
 from app.models.llm_connection import LLMConnection
+from app.models.video_job import VideoJob
 
-__all__ = ["Base", "User", "Agent", "AgentUser", "MessageLog", "Book", "InventoryLog", "PlatformSetting", "LLMConnection"]
+__all__ = ["Base", "User", "Agent", "AgentUser", "MessageLog", "Book", "InventoryLog", "PlatformSetting", "LLMConnection", "VideoJob"]

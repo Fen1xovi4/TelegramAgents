@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.base import AgentMessage, AgentResponse, BaseAgent
 from app.agents.registry import AgentRegistry
 from app.agents.bookstore.prompts import INTENT_PARSE_SYSTEM, RECOMMEND_SYSTEM
+from app.agents.bookstore.book_lookup import verify_book_title
 from app.integrations.anthropic_client import parse_intent, generate_response
 from app.models.bookstore import Book, InventoryLog
 
@@ -23,12 +24,15 @@ class BookstoreAgent(BaseAgent):
     def get_roles(self) -> list[str]:
         return ["admin", "manager", "user"]
 
-    QUICK_BUTTONS = ["📚 Список книг", "🔍 Поиск книги"]
+    QUICK_BUTTONS = ["📚 Книги на продажу", "📦 Арендный шкаф", "🔍 Поиск книги"]
 
     async def handle_message(self, message: AgentMessage, db: AsyncSession) -> AgentResponse:
         # Quick button shortcuts — bypass LLM
-        if message.text == "📚 Список книг":
-            return await self._handle_search({}, message, db)
+        if message.text in ("📚 Книги на продажу", "📚 Список книг"):
+            return await self._handle_search({"category": "sale"}, message, db)
+
+        if message.text == "📦 Арендный шкаф":
+            return await self._handle_search({"category": "rental"}, message, db)
 
         if message.text == "🔍 Поиск книги":
             self._user_state[message.telegram_id] = "search"
@@ -92,7 +96,12 @@ class BookstoreAgent(BaseAgent):
     async def _handle_search(self, params: dict, message: AgentMessage, db: AsyncSession) -> AgentResponse:
         from sqlalchemy import or_
 
+        category = params.get("category")
         query = select(Book).where(Book.agent_id == message.agent_id, Book.quantity > 0)
+
+        # Filter by category if specified
+        if category:
+            query = query.where(Book.category == category)
 
         if q := params.get("query") or params.get("title"):
             query = query.where(or_(Book.title.ilike(f"%{q}%"), Book.author.ilike(f"%{q}%")))
@@ -101,78 +110,128 @@ class BookstoreAgent(BaseAgent):
         if genre := params.get("genre"):
             query = query.where(Book.genre.ilike(f"%{genre}%"))
 
-        result = await db.execute(query.limit(20))
+        result = await db.execute(query.limit(50))
         books = result.scalars().all()
 
         if not books:
             return AgentResponse(text="К сожалению, ничего не найдено.", intent="search_books", intent_data=params)
 
-        # Group by genre
+        # Group by genre -> author -> books
         from collections import defaultdict
-        by_genre: dict[str, list] = defaultdict(list)
+        by_genre: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
         for b in books:
-            by_genre[b.genre or ""].append(b)
+            genre_key = b.genre or ""
+            author_key = b.author or "Автор неизвестен"
+            by_genre[genre_key][author_key].append(b)
 
-        lines = ["📖 Найденные книги:\n"]
-        # Categories with genre first, then uncategorized
+        category_label = "📦 Арендный шкаф" if category == "rental" else "📖 Книги на продажу" if category == "sale" else "📖 Найденные книги"
+        lines = [f"{category_label}:\n"]
         for genre in sorted(by_genre.keys(), key=lambda g: (g == "", g)):
             if genre:
                 lines.append(f"\n📂 {genre}:")
             elif by_genre.keys() - {""}:
                 lines.append("\n📂 Без категории:")
-            for b in by_genre[genre]:
-                author_str = b.author or "Автор неизвестен"
-                price_str = f", {b.price} руб." if b.price else ""
-                lines.append(f"  📚 {b.title} — {author_str} (кол-во: {b.quantity}{price_str})")
+            for author in sorted(by_genre[genre].keys()):
+                lines.append(f"\n  ✍️ {author}:")
+                for b in sorted(by_genre[genre][author], key=lambda x: x.title):
+                    price_str = f" — {b.price} руб." if b.price else ""
+                    lines.append(f"    📚 {b.title}{price_str}")
 
         return AgentResponse(text="\n".join(lines), intent="search_books", intent_data=params, buttons=self.QUICK_BUTTONS)
 
     async def _handle_add(self, params: dict, message: AgentMessage, db: AsyncSession) -> AgentResponse:
-        title = params.get("title", "").strip()
-        if not title:
-            return AgentResponse(text="Укажите название книги.", intent="add_books")
+        category = params.get("category", "sale")
 
-        quantity = int(params.get("quantity", 1))
-        author = params.get("author")
-        genre = params.get("genre")
-        price = params.get("price")
+        # Support both new format (books array) and legacy (single title)
+        books_list = params.get("books")
+        if not books_list:
+            title = params.get("title", "").strip()
+            if not title:
+                return AgentResponse(text="Укажите название книги.", intent="add_books")
+            books_list = [{
+                "title": title,
+                "author": params.get("author"),
+                "genre": params.get("genre"),
+                "quantity": params.get("quantity", 1),
+                "price": params.get("price"),
+            }]
 
-        result = await db.execute(
-            select(Book).where(Book.agent_id == message.agent_id, Book.title.ilike(f"%{title}%"))
-        )
-        book = result.scalar_one_or_none()
+        added_lines = []
+        verified_lines = []
 
-        if book:
-            book.quantity += quantity
-            if author and not book.author:
-                book.author = author
-            if genre and not book.genre:
-                book.genre = genre
-        else:
-            book = Book(
-                agent_id=message.agent_id,
-                title=title,
-                author=author,
-                genre=genre,
-                quantity=quantity,
-                price=price,
+        for item in books_list:
+            title = (item.get("title") or "").strip()
+            if not title:
+                continue
+
+            quantity = int(item.get("quantity") or 1)
+            author = item.get("author")
+            genre = item.get("genre")
+            price = item.get("price")
+
+            # Verify book title via OpenLibrary
+            lookup = await verify_book_title(title, author)
+            original_title = title
+            if lookup:
+                if lookup["title"] and lookup["title"].lower() != title.lower():
+                    title = lookup["title"]
+                    verified_lines.append(f"«{original_title}» → «{title}»")
+                if lookup["author"] and not author:
+                    author = lookup["author"]
+
+            result = await db.execute(
+                select(Book).where(
+                    Book.agent_id == message.agent_id,
+                    Book.category == category,
+                    Book.title.ilike(f"%{title}%"),
+                )
             )
-            db.add(book)
-            await db.flush()
+            book = result.scalar_one_or_none()
 
-        log = InventoryLog(
-            book_id=book.id,
-            agent_id=message.agent_id,
-            change_type="arrival",
-            quantity_change=quantity,
-            note=f"Добавлено через Telegram",
-            performed_by=message.telegram_id,
-        )
-        db.add(log)
+            if book:
+                book.quantity += quantity
+                if author and not book.author:
+                    book.author = author
+                if genre and not book.genre:
+                    book.genre = genre
+            else:
+                book = Book(
+                    agent_id=message.agent_id,
+                    category=category,
+                    title=title,
+                    author=author,
+                    genre=genre,
+                    quantity=quantity,
+                    price=price,
+                )
+                db.add(book)
+                await db.flush()
+
+            log = InventoryLog(
+                book_id=book.id,
+                agent_id=message.agent_id,
+                change_type="arrival",
+                quantity_change=quantity,
+                note="Добавлено через Telegram",
+                performed_by=message.telegram_id,
+            )
+            db.add(log)
+
+            author_str = f" — {book.author}" if book.author else ""
+            added_lines.append(f"📚 {book.title}{author_str}: +{quantity} (всего: {book.quantity})")
+
+        if not added_lines:
+            return AgentResponse(text="Не удалось распознать книги. Укажите названия.", intent="add_books")
+
         await db.commit()
 
+        category_label = "📦 Аренда" if category == "rental" else "🏪 Продажа"
+        text_parts = [f"✅ Добавлено ({category_label}):\n" + "\n".join(added_lines)]
+        if verified_lines:
+            text_parts.append("\n🔍 Уточнены названия:\n" + "\n".join(verified_lines))
+
         return AgentResponse(
-            text=f"Добавлено: {title} — {quantity} шт. (всего на складе: {book.quantity})",
+            text="\n".join(text_parts),
             intent="add_books",
             intent_data=params,
         )
@@ -328,7 +387,7 @@ class BookstoreAgent(BaseAgent):
             return AgentResponse(text="Пока нет доступных книг для рекомендации.", intent="recommend")
 
         books_text = "\n".join(
-            f"- {b.title} ({b.author or '?'}) — жанр: {b.genre or '?'}, кол-во: {b.quantity}"
+            f"- {b.title} ({b.author or '?'}) — жанр: {b.genre or '?'}"
             for b in books
         )
         preferences = params.get("preferences") or params.get("genre") or message.text
@@ -359,15 +418,17 @@ class BookstoreAgent(BaseAgent):
         base = (
             "Я бот книжного магазина. Вот что я умею:\n\n"
             "📖 Поиск книг — спросите «какие книги есть?» или «есть книги по фантастике?»\n"
+            "📦 Арендный шкаф — «покажи арендные книги» или нажмите кнопку\n"
             "💡 Рекомендации — «посоветуй что почитать» или «посоветуй детектив»\n"
             "📋 Жанры — «какие жанры есть?»\n"
         )
         if role in ("admin", "manager"):
             base += (
                 "\n🔧 Управление (для администраторов):\n"
-                "➕ Добавить — «приехало 5 книг Война и Мир»\n"
+                "➕ Добавить — «добавь книгу Война и Мир»\n"
+                "📦 Аренда — «аренда добавь Мастер и Маргарита»\n"
                 "➖ Продажа — «продана книга Мастер и Маргарита»\n"
-                "✏️ Изменить — «измени количество книги Война и мир на 5» или «измени автора книги Слон на Филипенк��»\n"
-                "🗑 Удалить — «удали книгу М��угли» или «списать к��игу, потеряли»\n"
+                "✏️ Изменить — «измени автора книги Слон на Филипенко»\n"
+                "🗑 Удалить — «удали книгу Маугли»\n"
             )
         return base

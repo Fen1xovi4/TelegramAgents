@@ -42,6 +42,10 @@ class TelegramBotManager:
         async def handle_all(message: types.Message):
             await self._handle_message(agent_id, agent_type, message)
 
+        @dp.callback_query()
+        async def handle_callback(callback: types.CallbackQuery):
+            await self._handle_callback_query(agent_id, agent_type, callback)
+
         task = asyncio.create_task(dp.start_polling(bot, handle_signals=False))
         self._tasks[agent_id] = task
         logger.info(f"Bot started for agent {agent_id}")
@@ -136,6 +140,28 @@ class TelegramBotManager:
                     resize_keyboard=True,
                 )
             await message.answer(response.text, reply_markup=reply_markup)
+
+    async def _handle_callback_query(
+        self, agent_id: int, agent_type: str, callback: types.CallbackQuery
+    ):
+        if not callback.data:
+            await callback.answer()
+            return
+
+        async with async_session() as db:
+            try:
+                agent_handler = AgentRegistry.get(agent_type)
+                answer_text = await agent_handler.handle_callback_query(
+                    callback_data=callback.data,
+                    telegram_id=callback.from_user.id,
+                    chat_id=callback.message.chat.id,
+                    agent_id=agent_id,
+                    db=db,
+                )
+                await callback.answer(answer_text)
+            except Exception as e:
+                logger.error(f"Callback query handler error: {e}")
+                await callback.answer("Произошла ошибка.")
 
     async def _get_or_create_user(
         self, db: AsyncSession, agent_id: int, tg_user: types.User

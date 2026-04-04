@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 
 class BookCreate(BaseModel):
+    category: str = "sale"
     title: str
     author: str | None = None
     genre: str | None = None
@@ -15,6 +16,7 @@ class BookCreate(BaseModel):
 
 
 class BookUpdate(BaseModel):
+    category: str | None = None
     title: str | None = None
     author: str | None = None
     genre: str | None = None
@@ -27,6 +29,7 @@ class BookUpdate(BaseModel):
 class BookResponse(BaseModel):
     id: int
     agent_id: int
+    category: str
     title: str
     author: str | None
     genre: str | None

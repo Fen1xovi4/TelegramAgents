@@ -3,6 +3,7 @@ import api from './client'
 export interface Book {
   id: number
   agent_id: number
+  category: string
   title: string
   author: string | null
   genre: string | null
@@ -38,6 +39,10 @@ export async function createBook(agentId: number, body: Partial<Book>): Promise<
 export async function updateBook(agentId: number, bookId: number, body: Partial<Book>): Promise<Book> {
   const { data } = await api.put(`/agents/${agentId}/bookstore/books/${bookId}`, body)
   return data
+}
+
+export async function deleteBook(agentId: number, bookId: number): Promise<void> {
+  await api.delete(`/agents/${agentId}/bookstore/books/${bookId}`)
 }
 
 export async function getInventoryLog(agentId: number): Promise<InventoryLogEntry[]> {

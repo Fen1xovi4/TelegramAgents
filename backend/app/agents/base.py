@@ -27,6 +27,12 @@ class BaseAgent(ABC):
     @abstractmethod
     async def handle_message(self, message: AgentMessage, db: AsyncSession) -> AgentResponse: ...
 
+    async def handle_callback_query(
+        self, callback_data: str, telegram_id: int, chat_id: int, agent_id: int, db: AsyncSession
+    ) -> str | None:
+        """Handle inline button callbacks. Return text to answer the callback, or None."""
+        return None
+
     @abstractmethod
     def get_default_config(self) -> dict: ...
 

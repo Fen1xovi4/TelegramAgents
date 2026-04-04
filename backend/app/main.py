@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.agents.registry import AgentRegistry
 from app.database import async_session, engine
 from app.models import Base, User, Agent
-from app.api import auth, agents, logs, bookstore, settings
+from app.api import auth, agents, logs, bookstore, settings, video_shorts
 from app.api.auth import hash_password
 from app.services.telegram_bot_manager import bot_manager
 
@@ -75,6 +75,7 @@ app.include_router(agents.router)
 app.include_router(logs.router)
 app.include_router(bookstore.router)
 app.include_router(settings.router)
+app.include_router(video_shorts.router)
 
 
 @app.get("/api/health")

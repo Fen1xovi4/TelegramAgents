@@ -39,6 +39,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      - video_tmp:/tmp/video_shorts
     command: uvicorn app.main:app --host 0.0.0.0 --port 8333 --reload
 
   worker:
@@ -56,6 +57,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      - video_tmp:/tmp/video_shorts
     command: arq app.worker.main.WorkerSettings
 
   db-backup:
@@ -87,3 +89,4 @@ services:
 
 volumes:
   postgres_data:
+  video_tmp:
